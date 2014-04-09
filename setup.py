@@ -1,11 +1,12 @@
-import os.path
 import sys
 
 from setuptools import setup, Command
 
 
 class Tox(Command):
+
     user_options = []
+
     def initialize_options(self):
         pass
 
@@ -19,10 +20,10 @@ class Tox(Command):
 
 setup(
     name="kafka-quixey",
-    version="0.8.1-1",
+    version="0.9.0-q2",
 
-    install_requires=["distribute", "tox"],
-    tests_require=["tox"],
+    install_requires=["distribute"],
+    tests_require=["tox", "mock"],
     cmdclass={"test": Tox},
 
     packages=["kafka"],

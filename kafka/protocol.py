@@ -25,12 +25,12 @@ class KafkaProtocol(object):
     This class does not have any state associated with it, it is purely
     for organization.
     """
-    PRODUCE_KEY       = 0
-    FETCH_KEY         = 1
-    OFFSET_KEY        = 2
-    METADATA_KEY      = 3
-    OFFSET_COMMIT_KEY = 6
-    OFFSET_FETCH_KEY  = 7
+    PRODUCE_KEY = 0
+    FETCH_KEY = 1
+    OFFSET_KEY = 2
+    METADATA_KEY = 3
+    OFFSET_COMMIT_KEY = 8
+    OFFSET_FETCH_KEY = 9
 
     ATTRIBUTE_CODEC_MASK = 0x03
     CODEC_NONE = 0x00
@@ -119,9 +119,17 @@ class KafkaProtocol(object):
                     read_message = True
                     yield OffsetAndMessage(offset, message)
             except BufferUnderflowError:
+                # NOTE: Not sure this is correct error handling:
+                # Is it possible to get a BUE if the message set is somewhere
+                # in the middle of the fetch response? If so, we probably have
+                # an issue that's not fetch size too small.
+                # Aren't we ignoring errors if we fail to unpack data by
+                # raising StopIteration()?
+                # If _decode_message() raises a ChecksumError, couldn't that
+                # also be due to the fetch size being too small?
                 if read_message is False:
-                    # If we get a partial read of a message, but haven't yielded anyhting
-                    # there's a problem
+                    # If we get a partial read of a message, but haven't
+                    # yielded anything there's a problem
                     raise ConsumerFetchSizeTooSmall()
                 else:
                     raise StopIteration()
@@ -171,7 +179,7 @@ class KafkaProtocol(object):
         Params
         ======
         client_id: string
-        correlation_id: string
+        correlation_id: int
         payloads: list of ProduceRequest
         acks: How "acky" you want the request to be
             0: immediate response
@@ -231,7 +239,7 @@ class KafkaProtocol(object):
         Params
         ======
         client_id: string
-        correlation_id: string
+        correlation_id: int
         payloads: list of FetchRequest
         max_wait_time: int, how long to block waiting on min_bytes of data
         min_bytes: int, the minimum number of bytes to accumulate before
@@ -274,14 +282,14 @@ class KafkaProtocol(object):
 
             for i in range(num_partitions):
                 ((partition, error, highwater_mark_offset), cur) = \
-                                        relative_unpack('>ihq', data, cur)
+                    relative_unpack('>ihq', data, cur)
 
                 (message_set, cur) = read_int_string(data, cur)
 
                 yield FetchResponse(
-                        topic, partition, error,
-                        highwater_mark_offset,
-                        KafkaProtocol._decode_message_set_iter(message_set))
+                    topic, partition, error,
+                    highwater_mark_offset,
+                    KafkaProtocol._decode_message_set_iter(message_set))
 
     @classmethod
     def encode_offset_request(cls, client_id, correlation_id, payloads=None):
@@ -321,7 +329,7 @@ class KafkaProtocol(object):
 
             for i in range(num_partitions):
                 ((partition, error, num_offsets,), cur) = \
-                                         relative_unpack('>ihi', data, cur)
+                    relative_unpack('>ihi', data, cur)
 
                 offsets = []
                 for j in range(num_offsets):
@@ -338,7 +346,7 @@ class KafkaProtocol(object):
         Params
         ======
         client_id: string
-        correlation_id: string
+        correlation_id: int
         topics: list of strings
         """
         topics = [] if topics is None else topics
@@ -361,11 +369,11 @@ class KafkaProtocol(object):
         ======
         data: bytes to decode
         """
-        ((correlation_id, numBrokers), cur) = relative_unpack('>ii', data, 0)
+        ((correlation_id, numbrokers), cur) = relative_unpack('>ii', data, 0)
 
         # Broker info
         brokers = {}
-        for i in range(numBrokers):
+        for i in range(numbrokers):
             ((nodeId, ), cur) = relative_unpack('>i', data, cur)
             (host, cur) = read_short_string(data, cur)
             ((port,), cur) = relative_unpack('>i', data, cur)
@@ -373,31 +381,35 @@ class KafkaProtocol(object):
 
         # Topic info
         ((num_topics,), cur) = relative_unpack('>i', data, cur)
-        topicMetadata = {}
+        topic_metadata = {}
 
         for i in range(num_topics):
-            ((topicError,), cur) = relative_unpack('>h', data, cur)
-            (topicName, cur) = read_short_string(data, cur)
+            # NOTE: topic_error is discarded. Should probably be returned with
+            # the topic metadata.
+            ((topic_error,), cur) = relative_unpack('>h', data, cur)
+            (topic_name, cur) = read_short_string(data, cur)
             ((num_partitions,), cur) = relative_unpack('>i', data, cur)
-            partitionMetadata = {}
+            partition_metadata = {}
 
             for j in range(num_partitions):
-                ((partitionErrorCode, partition, leader, numReplicas), cur) = \
-                                           relative_unpack('>hiii', data, cur)
+                # NOTE: partition_error_code is discarded. Should probably be
+                # returned with the partition metadata.
+                ((partition_error_code, partition, leader, numReplicas), cur) = \
+                    relative_unpack('>hiii', data, cur)
 
-                (replicas, cur) = relative_unpack('>%di' % numReplicas,
-                                                  data, cur)
+                (replicas, cur) = relative_unpack(
+                    '>%di' % numReplicas, data, cur)
 
-                ((numIsr,), cur) = relative_unpack('>i', data, cur)
-                (isr, cur) = relative_unpack('>%di' % numIsr, data, cur)
+                ((num_isr,), cur) = relative_unpack('>i', data, cur)
+                (isr, cur) = relative_unpack('>%di' % num_isr, data, cur)
 
-                partitionMetadata[partition] = \
-                        PartitionMetadata(topicName, partition, leader,
-                                          replicas, isr)
+                partition_metadata[partition] = \
+                    PartitionMetadata(
+                        topic_name, partition, leader, replicas, isr)
 
-            topicMetadata[topicName] = partitionMetadata
+            topic_metadata[topic_name] = partition_metadata
 
-        return (brokers, topicMetadata)
+        return brokers, topic_metadata
 
     @classmethod
     def encode_offset_commit_request(cls, client_id, correlation_id,
@@ -408,7 +420,7 @@ class KafkaProtocol(object):
         Params
         ======
         client_id: string
-        correlation_id: string
+        correlation_id: int
         group: string, the consumer group you are committing offsets for
         payloads: list of OffsetCommitRequest
         """
@@ -439,7 +451,6 @@ class KafkaProtocol(object):
         data: bytes to decode
         """
         ((correlation_id,), cur) = relative_unpack('>i', data, 0)
-        (client_id, cur) = read_short_string(data, cur)
         ((num_topics,), cur) = relative_unpack('>i', data, cur)
 
         for i in xrange(num_topics):
@@ -459,7 +470,7 @@ class KafkaProtocol(object):
         Params
         ======
         client_id: string
-        correlation_id: string
+        correlation_id: int
         group: string, the consumer group you are fetching offsets for
         payloads: list of OffsetFetchRequest
         """
@@ -490,7 +501,6 @@ class KafkaProtocol(object):
         """
 
         ((correlation_id,), cur) = relative_unpack('>i', data, 0)
-        (client_id, cur) = read_short_string(data, cur)
         ((num_topics,), cur) = relative_unpack('>i', data, cur)
 
         for i in range(num_topics):
@@ -531,7 +541,7 @@ def create_gzip_message(payloads, key=None):
     key: bytes, a key used for partition routing (optional)
     """
     message_set = KafkaProtocol._encode_message_set(
-                        [create_message(payload) for payload in payloads])
+        [create_message(payload) for payload in payloads])
 
     gzipped = gzip_encode(message_set)
     codec = KafkaProtocol.ATTRIBUTE_CODEC_MASK & KafkaProtocol.CODEC_GZIP
@@ -552,7 +562,7 @@ def create_snappy_message(payloads, key=None):
     key: bytes, a key used for partition routing (optional)
     """
     message_set = KafkaProtocol._encode_message_set(
-                            [create_message(payload) for payload in payloads])
+        [create_message(payload) for payload in payloads])
 
     snapped = snappy_encode(message_set)
     codec = KafkaProtocol.ATTRIBUTE_CODEC_MASK & KafkaProtocol.CODEC_SNAPPY

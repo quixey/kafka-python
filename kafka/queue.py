@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 from copy import copy
 import logging
 from multiprocessing import Process, Queue, Event
@@ -25,8 +27,9 @@ class KafkaConsumerProcess(Process):
         Process.__init__(self)
 
     def __str__(self):
-        return "[KafkaConsumerProcess: topic=%s, partition=%s, sleep=%s]" % \
-                (self.topic, self.partition, self.consumer_sleep)
+        return "[KafkaConsumerProcess: topic=%s, \
+            partition=%s, sleep=%s]" % \
+            (self.topic, self.partition, self.consumer_sleep)
 
     def run(self):
         self.barrier.wait()
@@ -70,10 +73,12 @@ class KafkaProducerProcess(Process):
         Process.__init__(self)
 
     def __str__(self):
-        return "[KafkaProducerProcess: topic=%s, flush_buffer=%s, \
-               flush_timeout=%s, timeout=%s]" % (
-                        self.topic, self.producer_flush_buffer,
-                        self.producer_flush_timeout, self.producer_timeout)
+        return "[KafkaProducerProcess: topic=%s, \
+            flush_buffer=%s, flush_timeout=%s, timeout=%s]" % \
+            (self.topic,
+                self.producer_flush_buffer,
+                self.producer_flush_timeout,
+                self.producer_timeout)
 
     def run(self):
         self.barrier.wait()
@@ -104,8 +109,8 @@ class KafkaProducerProcess(Process):
                 last_produce = time.time()
 
             try:
-                msg = KafkaClient.create_message(self.in_queue.get(True,
-                                                      self.producer_timeout))
+                msg = KafkaClient.create_message(
+                    self.in_queue.get(True, self.producer_timeout))
                 messages.append(msg)
 
             except Empty:
