@@ -20,7 +20,7 @@ class Tox(Command):
 
 setup(
     name="kafka-quixey",
-    version="0.9.0-q2",
+    version="0.9.0-q3",
 
     tests_require=["tox", "mock"],
     cmdclass={"test": Tox},
